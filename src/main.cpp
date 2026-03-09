@@ -1,4 +1,5 @@
 #include <M5GFX.h>
+#include <mnist_float32.h>
 
 M5GFX display;
 
