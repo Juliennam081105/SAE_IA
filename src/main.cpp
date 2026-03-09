@@ -60,7 +60,6 @@ void loop(void)
       display.display();
     }
     drawed = true;
-    printf("Touch nums: %d\n", nums);
   }
   else if (drawed)
   {
