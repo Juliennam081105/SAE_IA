@@ -7,17 +7,17 @@
   * @brief   Template generating plain C code for the implementation of Convolutional Neural Networks on MCU
   */
 
-#ifndef _CONV2D_9_H_
-#define _CONV2D_9_H_
+#ifndef _CONV2D_7_H_
+#define _CONV2D_7_H_
 
 #ifndef SINGLE_FILE
 #include "number.h"
 #endif
 
-#define INPUT_CHANNELS      64
-#define INPUT_HEIGHT        6
-#define INPUT_WIDTH         6
-#define CONV_FILTERS        128
+#define INPUT_CHANNELS      1
+#define INPUT_HEIGHT        28
+#define INPUT_WIDTH         28
+#define CONV_FILTERS        32
 #define CONV_KERNEL_SIZE_Y  3
 #define CONV_KERNEL_SIZE_X  3
 #define CONV_STRIDE_Y       2
@@ -32,10 +32,10 @@
 #define CONV_OUTWIDTH      ( ( (INPUT_WIDTH - CONV_KERNEL_SIZE_X + ZEROPADDING_LEFT + ZEROPADDING_RIGHT) / CONV_STRIDE_X ) + 1 )
 
 
-typedef float conv2d_9_output_type[CONV_OUTHEIGHT][CONV_OUTWIDTH][CONV_FILTERS];
+typedef float conv2d_7_output_type[CONV_OUTHEIGHT][CONV_OUTWIDTH][CONV_FILTERS];
 
 #if 0
-void conv2d_9(
+void conv2d_7(
   const number_t input[INPUT_HEIGHT][INPUT_WIDTH][INPUT_CHANNELS],               // IN
   const number_t kernel[CONV_FILTERS][CONV_KERNEL_SIZE_X][CONV_KERNEL_SIZE_Y][INPUT_CHANNELS], // IN
 
@@ -59,4 +59,4 @@ void conv2d_9(
 #undef CONV_OUTWIDTH
 #undef CONV_OUTHEIGHT
 
-#endif//_CONV2D_9_H_
+#endif//_CONV2D_7_H_

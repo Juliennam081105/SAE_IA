@@ -8,7 +8,7 @@
   */
 
 #ifndef SINGLE_FILE
-#include "conv2d_8.h"
+#include "conv2d_7.h"
 #include "number.h"
 #endif
 
@@ -18,10 +18,10 @@
 #include "riscv_nnfunctions.h"
 #endif
 
-#define INPUT_CHANNELS      32
-#define INPUT_HEIGHT        13
-#define INPUT_WIDTH         13
-#define CONV_FILTERS        64
+#define INPUT_CHANNELS      1
+#define INPUT_HEIGHT        28
+#define INPUT_WIDTH         28
+#define CONV_FILTERS        32
 #define CONV_KERNEL_SIZE_Y  3
 #define CONV_KERNEL_SIZE_X  3
 #define CONV_STRIDE_Y       2
@@ -51,7 +51,7 @@
 #define LONG_NUMBER_T float
 
 
-static inline void conv2d_8(
+static inline void conv2d_7(
   const NUMBER_T input[INPUT_HEIGHT][INPUT_WIDTH][INPUT_CHANNELS],               // IN
   const NUMBER_T kernel[CONV_FILTERS][CONV_KERNEL_SIZE_X][CONV_KERNEL_SIZE_Y][INPUT_CHANNELS / CONV_GROUPS], // IN
 

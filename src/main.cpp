@@ -246,30 +246,22 @@ void loop() {
 // EXECUTION CNN + PREPROCESSING COMPLET
 // =====================================================
 void runCNN() {
-
-  // En ajoutant 'static', ces variables ne saturent plus la pile (Stack)
   static float blurred[GRID_SIZE][GRID_SIZE];
   static float preprocessed[GRID_SIZE][GRID_SIZE];
   static input_t input;
-  static output_t output; // Celle-ci est petite, on peut la laisser
+  static output_t output;
 
-  // 1. Lissage
   gaussianBlur(grid, blurred);
-
-  // 2. Centrage + mise à l'échelle
   centerAndScale(blurred, preprocessed);
 
-  // 3. Préparation de l'entrée CNN
   for(int y = 0; y < 28; y++) {
     for(int x = 0; x < 28; x++) {
       input[y][x][0] = preprocessed[y][x];
     }
   }
 
-  // 4. Inférence
   cnn(input, output);
 
-  // 5. Résultats
   float probs[10];
   softmax(output, probs, 10);
 
@@ -282,13 +274,25 @@ void runCNN() {
     }
   }
 
-  // Affichage des résultats
-  Serial.println("=========== RESULTAT CNN ===========");
-  for(int i = 0; i < 10; i++){
-    Serial.printf("%d : %.4f %%\n", i, probs[i] * 100);
-  }
-  Serial.printf("Chiffre reconnu : %d\n", predicted);
-  Serial.println("====================================");
+  // --- AFFICHAGE SUR L'ÉCRAN ---
+  // On efface une petite zone ou on écrit par-dessus
+  display.setTextColor(TFT_GREEN, TFT_BLACK); // Texte vert sur fond noir
+  display.setTextSize(3);                     // Texte assez grand
+  
+  // Positionnement en haut à gauche
+  display.setCursor(10, 10);
+  display.printf("Pred: %d", predicted);
+  
+  // Positionnement juste en dessous pour la proba
+  display.setTextSize(2);
+  display.setCursor(10, 45);
+  display.printf("%.2f%%", maxVal * 100);
+
+  // --- LOG SERIE (Optionnel) ---
+  Serial.printf("Reconnu : %d (%.2f%%)\n", predicted, maxVal * 100);
+
+  // Petit délai pour avoir le temps de lire l'écran avant le prochain tracé
+  delay(1500); 
 }
 // =====================================================
 // DEBUG : affichage grille
