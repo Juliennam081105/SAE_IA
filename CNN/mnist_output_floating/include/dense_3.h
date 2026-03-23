@@ -7,21 +7,21 @@
   * @brief   Template generating plain C code for the implementation of Convolutional Neural Networks on MCU
   */
 
-#ifndef _DENSE_2_H_
-#define _DENSE_2_H_
+#ifndef _DENSE_3_H_
+#define _DENSE_3_H_
 
 #ifndef SINGLE_FILE
 #include "number.h"
 #include <stdint.h>
 #endif
 
-#define INPUT_SAMPLES 1152
-#define FC_UNITS 100
+#define INPUT_SAMPLES 100
+#define FC_UNITS 10
 
-typedef float dense_2_output_type[FC_UNITS];
+typedef float dense_3_output_type[FC_UNITS];
 
 #if 0
-void dense_2(
+void dense_3(
   const number_t input[INPUT_SAMPLES], 			      // IN
 	const number_t kernel[FC_UNITS][INPUT_SAMPLES],  // IN
 
@@ -33,4 +33,4 @@ void dense_2(
 #undef INPUT_SAMPLES
 #undef FC_UNITS
 
-#endif//_DENSE_2_H_
+#endif//_DENSE_3_H_

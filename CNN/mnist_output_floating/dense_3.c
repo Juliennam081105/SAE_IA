@@ -8,7 +8,7 @@
   */
 
 #ifndef SINGLE_FILE
-#include "dense_2.h"
+#include "dense_3.h"
 #include "number.h"
 #endif
 
@@ -18,9 +18,9 @@
 #include "riscv_nnfunctions.h"
 #endif
 
-#define INPUT_SAMPLES 1152
-#define FC_UNITS 100
-#define ACTIVATION_RELU
+#define INPUT_SAMPLES 100
+#define FC_UNITS 10
+#define ACTIVATION_LINEAR
 
 // For fixed point quantization
 #define WEIGHTS_SCALE_FACTOR 0
@@ -33,7 +33,7 @@
 #define LONG_NUMBER_T float
 
 
-static inline void dense_2(
+static inline void dense_3(
   const NUMBER_T input[INPUT_SAMPLES], 			      // IN
 	const NUMBER_T kernel[FC_UNITS][INPUT_SAMPLES],  // IN
 
@@ -88,7 +88,7 @@ static inline void dense_2(
 
 #undef INPUT_SAMPLES
 #undef FC_UNITS
-#undef ACTIVATION_RELU
+#undef ACTIVATION_LINEAR
 #undef WEIGHTS_SCALE_FACTOR
 #undef BIASES_SCALE_FACTOR
 #undef INPUT_SCALE_FACTOR
