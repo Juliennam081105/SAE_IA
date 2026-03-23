@@ -6,171 +6,17 @@ M5GFX display;
 
 #define GRID_SIZE 28
 
+// Variables globales
 float grid[GRID_SIZE][GRID_SIZE];
+unsigned long lastPredictionTime = 0;
+bool showResult = false;
 
-void printGrid();
+// Prototypes
 void runCNN();
-
-
-// =====================================================
-// SOFTMAX (stable)
-// =====================================================
-void softmax(float *input, float *output, int size) {
-  float maxVal = input[0];
-  for(int i = 1; i < size; i++){
-    if(input[i] > maxVal) maxVal = input[i];
-  }
-  float sum = 0.0f;
-  for(int i = 0; i < size; i++){
-    output[i] = expf(input[i] - maxVal);
-    sum += output[i];
-  }
-  for(int i = 0; i < size; i++){
-    output[i] /= sum;
-  }
-}
-
-
-// =====================================================
-// GAUSSIAN BLUR 5x5
-// Lisse le dessin pour coller aux images MNIST
-// sigma ≈ 0.8, kernel normalisé
-// =====================================================
-void gaussianBlur(float src[GRID_SIZE][GRID_SIZE], float dst[GRID_SIZE][GRID_SIZE]) {
-
-  // Kernel gaussien 5x5 (sigma ≈ 0.8), pré-calculé et normalisé
-  static const float kernel[5][5] = {
-    { 0.00296902f, 0.01330621f, 0.02193823f, 0.01330621f, 0.00296902f },
-    { 0.01330621f, 0.05963430f, 0.09832033f, 0.05963430f, 0.01330621f },
-    { 0.02193823f, 0.09832033f, 0.16210282f, 0.09832033f, 0.02193823f },
-    { 0.01330621f, 0.05963430f, 0.09832033f, 0.05963430f, 0.01330621f },
-    { 0.00296902f, 0.01330621f, 0.02193823f, 0.01330621f, 0.00296902f }
-  };
-
-  for(int y = 0; y < GRID_SIZE; y++){
-    for(int x = 0; x < GRID_SIZE; x++){
-
-      float acc   = 0.0f;
-      float wsum  = 0.0f;
-
-      for(int ky = -2; ky <= 2; ky++){
-        for(int kx = -2; kx <= 2; kx++){
-          int nx = x + kx;
-          int ny = y + ky;
-          if(nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE){
-            float w = kernel[ky + 2][kx + 2];
-            acc  += src[ny][nx] * w;
-            wsum += w;
-          }
-        }
-      }
-
-      dst[y][x] = (wsum > 0.0f) ? (acc / wsum) : 0.0f;
-    }
-  }
-}
-
-
-// =====================================================
-// BOUNDING BOX
-// Retourne les coordonnées min/max du trait dessiné
-// Retourne false si la grille est vide
-// =====================================================
-bool getBoundingBox(float src[GRID_SIZE][GRID_SIZE],
-                    int &xmin, int &ymin, int &xmax, int &ymax) {
-
-  xmin = GRID_SIZE; ymin = GRID_SIZE;
-  xmax = -1;        ymax = -1;
-
-  for(int y = 0; y < GRID_SIZE; y++){
-    for(int x = 0; x < GRID_SIZE; x++){
-      if(src[y][x] > 0.05f){        // seuil pour ignorer le bruit
-        if(x < xmin) xmin = x;
-        if(x > xmax) xmax = x;
-        if(y < ymin) ymin = y;
-        if(y > ymax) ymax = y;
-      }
-    }
-  }
-
-  return (xmax >= xmin && ymax >= ymin);
-}
-
-
-// =====================================================
-// CENTRAGE + MISE À L'ÉCHELLE (style MNIST)
-// Le chiffre est scalé pour tenir dans 20x20 pixels
-// puis centré dans la grille 28x28 par son centroïde
-// =====================================================
-void centerAndScale(float src[GRID_SIZE][GRID_SIZE], float dst[GRID_SIZE][GRID_SIZE]) {
-
-  // Grille de destination initialisée à 0
-  for(int y = 0; y < GRID_SIZE; y++)
-    for(int x = 0; x < GRID_SIZE; x++)
-      dst[y][x] = 0.0f;
-
-  int xmin, ymin, xmax, ymax;
-  if(!getBoundingBox(src, xmin, ymin, xmax, ymax)) return;
-
-  int bw = xmax - xmin + 1;   // largeur  du bounding box
-  int bh = ymax - ymin + 1;   // hauteur  du bounding box
-
-  // Facteur d'échelle : on veut tenir dans 20x20 en conservant le ratio
-  float scale = 20.0f / (float)((bw > bh) ? bw : bh);
-
-  int scaledW = (int)(bw * scale + 0.5f);
-  int scaledH = (int)(bh * scale + 0.5f);
-
-  // Calcul du centroïde (centre de masse des pixels) de l'image mise à l'échelle
-  float cx = 0.0f, cy = 0.0f, wsum = 0.0f;
-
-  for(int y = 0; y < GRID_SIZE; y++){
-    for(int x = 0; x < GRID_SIZE; x++){
-      if(src[y][x] > 0.05f){
-        float sx = (x - xmin) * scale;
-        float sy = (y - ymin) * scale;
-        cx   += sx * src[y][x];
-        cy   += sy * src[y][x];
-        wsum += src[y][x];
-      }
-    }
-  }
-
-  if(wsum < 1e-6f) return;
-
-  cx /= wsum;
-  cy /= wsum;
-
-  // Décalage pour centrer le centroïde sur (14, 14)
-  int offX = (int)(14.0f - cx + 0.5f);
-  int offY = (int)(14.0f - cy + 0.5f);
-
-  // Rééchantillonnage bilinéaire : on parcourt la dst et on cherche
-  // le pixel correspondant dans src
-  for(int dy = 0; dy < GRID_SIZE; dy++){
-    for(int dx = 0; dx < GRID_SIZE; dx++){
-
-      // Coordonnées dans l'espace source
-      float sx = (dx - offX) / scale + xmin;
-      float sy = (dy - offY) / scale + ymin;
-
-      if(sx < 0 || sx >= GRID_SIZE - 1 || sy < 0 || sy >= GRID_SIZE - 1) continue;
-
-      // Interpolation bilinéaire
-      int x0 = (int)sx,  y0 = (int)sy;
-      int x1 = x0 + 1,   y1 = y0 + 1;
-      float tx = sx - x0, ty = sy - y0;
-
-      float v = src[y0][x0] * (1-tx) * (1-ty)
-              + src[y0][x1] *    tx  * (1-ty)
-              + src[y1][x0] * (1-tx) *    ty
-              + src[y1][x1] *    tx  *    ty;
-
-      dst[dy][dx] = (v > 1.0f) ? 1.0f : v;
-    }
-  }
-}
-
+void softmax(float *input, float *output, int size);
+void gaussianBlur3x3(float src[GRID_SIZE][GRID_SIZE], float dst[GRID_SIZE][GRID_SIZE]);
+void centerAndScale(float src[GRID_SIZE][GRID_SIZE], float dst[GRID_SIZE][GRID_SIZE]);
+bool getBoundingBox(float src[GRID_SIZE][GRID_SIZE], int &xmin, int &ymin, int &xmax, int &ymax);
 
 // =====================================================
 // SETUP
@@ -181,69 +27,59 @@ void setup() {
   display.startWrite();
   display.fillScreen(TFT_BLACK);
 
-  for(int y = 0; y < GRID_SIZE; y++)
-    for(int x = 0; x < GRID_SIZE; x++)
-      grid[y][x] = 0.0f;
+  memset(grid, 0, sizeof(grid));
+  Serial.println("Système prêt - Contraste élevé");
 }
 
-
 // =====================================================
-// LOOP : dessin tactile
+// LOOP : Dessin tactile
 // =====================================================
 void loop() {
-
   lgfx::touch_point_t tp[1];
   int nums = display.getTouchRaw(tp, 1);
-
   static bool drawing = false;
 
-  if(nums) {
+  if (nums) {
+    if (showResult) {
+      display.fillScreen(TFT_BLACK);
+      memset(grid, 0, sizeof(grid));
+      showResult = false;
+    }
 
     drawing = true;
-
     int x = tp[0].x;
     int y = tp[0].y;
 
-    display.fillCircle(x, y, 4, TFT_WHITE);
+    display.fillCircle(x, y, 5, TFT_WHITE);
 
     int gx = map(x, 0, 320, 0, 27);
     int gy = map(y, 0, 240, 0, 27);
 
-    if(gx >= 0 && gx < GRID_SIZE && gy >= 0 && gy < GRID_SIZE)
+    if (gx >= 0 && gx < GRID_SIZE && gy >= 0 && gy < GRID_SIZE) {
       grid[gy][gx] = 1.0f;
-
-    for(int dy = -1; dy <= 1; dy++){
-      for(int dx = -1; dx <= 1; dx++){
-        int nx = gx + dx;
-        int ny = gy + dy;
-        if(nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE){
-          if(dx != 0 || dy != 0){
-            if(grid[ny][nx] < 0.5f)
-              grid[ny][nx] = 0.5f;
-          }
-        }
-      }
+      // Épaississement léger pour assurer la continuité du trait
+      if (gx + 1 < 28) grid[gy][gx + 1] = std::max(grid[gy][gx + 1], 0.6f);
+      if (gx - 1 >= 0) grid[gy][gx - 1] = std::max(grid[gy][gx - 1], 0.6f);
+      if (gy + 1 < 28) grid[gy + 1][gx] = std::max(grid[gy + 1][gx], 0.6f);
+      if (gy - 1 >= 0) grid[gy - 1][gx] = std::max(grid[gy - 1][gx], 0.6f);
     }
-
-  }
-  else if(drawing) {
-
-    printGrid();
+  } 
+  else if (drawing) {
     runCNN();
-
     drawing = false;
+    showResult = true;
+    lastPredictionTime = millis();
+  }
 
+  if (showResult && (millis() - lastPredictionTime > 2500)) {
     display.fillScreen(TFT_BLACK);
-
-    for(int y = 0; y < GRID_SIZE; y++)
-      for(int x = 0; x < GRID_SIZE; x++)
-        grid[y][x] = 0.0f;
+    memset(grid, 0, sizeof(grid));
+    showResult = false;
   }
 }
 
-
 // =====================================================
-// EXECUTION CNN + PREPROCESSING COMPLET
+// EXECUTION CNN + TRAITEMENT IMAGE
 // =====================================================
 void runCNN() {
   static float blurred[GRID_SIZE][GRID_SIZE];
@@ -251,60 +87,163 @@ void runCNN() {
   static input_t input;
   static output_t output;
 
-  gaussianBlur(grid, blurred);
+  // 1. Preprocessing
+  gaussianBlur3x3(grid, blurred);
   centerAndScale(blurred, preprocessed);
 
+  // --- NOUVEAU : RENFORCEMENT DU NOIR ET NETTOYAGE ---
+  for (int y = 0; y < 28; y++) {
+    for (int x = 0; x < 28; x++) {
+      float v = preprocessed[y][x];
+      
+      if (v > 0.35f) {
+        // Courbe de contraste : les valeurs hautes deviennent très hautes (noir pur)
+        v = powf(v, 0.7f) * 1.1f; 
+      } else {
+        // On coupe les gris trop clairs pour un dégradé plus net
+        v = 0.0f; 
+      }
+      preprocessed[y][x] = (v > 1.0f) ? 1.0f : v;
+    }
+  }
+  // ----------------------------------------------------
+
+  // 2. Préparation Input
   for(int y = 0; y < 28; y++) {
     for(int x = 0; x < 28; x++) {
       input[y][x][0] = preprocessed[y][x];
     }
   }
 
-  cnn(input, output);
+  // --- MESURE DU TEMPS D'INFÉRENCE ---
+  unsigned long startTime = micros(); // Début du chrono
+  
+  cnn(input, output); // Appel du modèle IA
+  
+  unsigned long endTime = micros();   // Fin du chrono
+  unsigned long inferenceTime = endTime - startTime; // Temps en microsecondes
+  // ------------------------------------
 
+  // 3. Softmax & Résultat
   float probs[10];
   softmax(output, probs, 10);
 
   int predicted = 0;
-  float maxVal  = probs[0];
+  float maxVal = probs[0];
   for(int i = 1; i < 10; i++){
-    if(probs[i] > maxVal){
-      maxVal = probs[i];
-      predicted = i;
-    }
+    if(probs[i] > maxVal) { maxVal = probs[i]; predicted = i; }
   }
 
-  // --- AFFICHAGE SUR L'ÉCRAN ---
-  // On efface une petite zone ou on écrit par-dessus
-  display.setTextColor(TFT_GREEN, TFT_BLACK); // Texte vert sur fond noir
-  display.setTextSize(3);                     // Texte assez grand
-  
-  // Positionnement en haut à gauche
-  display.setCursor(10, 10);
-  display.printf("Pred: %d", predicted);
-  
-  // Positionnement juste en dessous pour la proba
+  // 4. Envoi des données vers Python (on ajoute le temps à la fin)
+  // Format : RES:Chiffre,Confiance,TempsInferenceMs
+  Serial.print("MAT:"); // Envoi matrice (inchangé)
+  for(int y=0; y<28; y++) for(int x=0; x<28; x++) {
+    Serial.print(preprocessed[y][x], 1);
+    if(x<27 || y<27) Serial.print(",");
+  }
+  Serial.println();
+
+  Serial.printf("RES:%d,%.2f,%.3f\n", predicted, maxVal * 100, (float)inferenceTime / 1000.0f);
+
+  // 5. Affichage sur l'écran du M5
+  display.fillScreen(TFT_BLACK);
+  display.setTextColor(TFT_GREEN, TFT_BLACK); 
   display.setTextSize(2);
-  display.setCursor(10, 45);
-  display.printf("%.2f%%", maxVal * 100);
-
-  // --- LOG SERIE (Optionnel) ---
-  Serial.printf("Reconnu : %d (%.2f%%)\n", predicted, maxVal * 100);
-
-  // Petit délai pour avoir le temps de lire l'écran avant le prochain tracé
-  delay(1500); 
+  display.setCursor(10, 10);
+  display.printf("ID: %d (%.1f%%)", predicted, maxVal * 100);
+  
+  display.setCursor(10, 40);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.printf("IA: %.2f ms", (float)inferenceTime / 1000.0f);
 }
+
 // =====================================================
-// DEBUG : affichage grille
+// FONCTIONS TECHNIQUES
 // =====================================================
-void printGrid() {
-  Serial.println("============= GRID =============");
+
+void gaussianBlur3x3(float src[GRID_SIZE][GRID_SIZE], float dst[GRID_SIZE][GRID_SIZE]) {
+  // Noyau 3x3 plus compact pour garder un coeur de trait sombre
+  static const float kernel[3][3] = {
+    { 0.075f, 0.124f, 0.075f },
+    { 0.124f, 0.204f, 0.124f },
+    { 0.075f, 0.124f, 0.075f }
+  };
+
   for(int y = 0; y < GRID_SIZE; y++){
     for(int x = 0; x < GRID_SIZE; x++){
-      Serial.print(grid[y][x], 1);
-      Serial.print(" ");
+      float acc = 0.0f;
+      for(int ky = -1; ky <= 1; ky++){
+        for(int kx = -1; kx <= 1; kx++){
+          int nx = x + kx;
+          int ny = y + ky;
+          if(nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE){
+            acc += src[ny][nx] * kernel[ky + 1][kx + 1];
+          }
+        }
+      }
+      // On booste légèrement le résultat pour compenser la perte d'intensité du flou
+      float v = acc * 1.2f; 
+      dst[y][x] = (v > 1.0f) ? 1.0f : v;
     }
-    Serial.println();
   }
-  Serial.println("================================");
+}
+
+void centerAndScale(float src[GRID_SIZE][GRID_SIZE], float dst[GRID_SIZE][GRID_SIZE]) {
+  memset(dst, 0, sizeof(float) * GRID_SIZE * GRID_SIZE);
+  int xmin, ymin, xmax, ymax;
+  if (!getBoundingBox(src, xmin, ymin, xmax, ymax)) return;
+
+  int bw = xmax - xmin + 1, bh = ymax - ymin + 1;
+  float scale = 20.0f / (float)((bw > bh) ? bw : bh);
+
+  float cx = 0, cy = 0, wsum = 0;
+  for (int y = ymin; y <= ymax; y++) {
+    for (int x = xmin; x <= xmax; x++) {
+      if (src[y][x] > 0.1f) {
+        cx += (x - xmin) * scale * src[y][x];
+        cy += (y - ymin) * scale * src[y][x];
+        wsum += src[y][x];
+      }
+    }
+  }
+  if (wsum < 0.001f) return;
+  cx /= wsum; cy /= wsum;
+
+  int offX = (int)(14.0f - cx), offY = (int)(14.0f - cy);
+
+  for (int dy = 0; dy < GRID_SIZE; dy++) {
+    for (int dx = 0; dx < GRID_SIZE; dx++) {
+      float sx = (dx - offX) / scale + xmin, sy = (dy - offY) / scale + ymin;
+      if (sx >= 0 && sx < GRID_SIZE - 1 && sy >= 0 && sy < GRID_SIZE - 1) {
+        int x0 = (int)sx, y0 = (int)sy;
+        float tx = sx - x0, ty = sy - y0;
+        dst[dy][dx] = src[y0][x0] * (1 - tx) * (1 - ty) + src[y0][x0 + 1] * tx * (1 - ty) +
+                      src[y0 + 1][x0] * (1 - tx) * ty + src[y0 + 1][x0 + 1] * tx * ty;
+      }
+    }
+  }
+}
+
+bool getBoundingBox(float src[GRID_SIZE][GRID_SIZE], int &xmin, int &ymin, int &xmax, int &ymax) {
+  xmin = ymin = GRID_SIZE; xmax = ymax = -1;
+  for (int y = 0; y < GRID_SIZE; y++) {
+    for (int x = 0; x < GRID_SIZE; x++) {
+      if (src[y][x] > 0.1f) {
+        if (x < xmin) xmin = x; if (x > xmax) xmax = x;
+        if (y < ymin) ymin = y; if (y > ymax) ymax = y;
+      }
+    }
+  }
+  return (xmax >= xmin);
+}
+
+void softmax(float *input, float *output, int size) {
+  float maxVal = input[0];
+  for (int i = 1; i < size; i++) if (input[i] > maxVal) maxVal = input[i];
+  float sum = 0.0f;
+  for (int i = 0; i < size; i++) {
+    output[i] = expf(input[i] - maxVal);
+    sum += output[i];
+  }
+  for (int i = 0; i < size; i++) output[i] /= sum;
 }
