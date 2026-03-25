@@ -86,6 +86,7 @@ void runCNN() {
   static float preprocessed[GRID_SIZE][GRID_SIZE];
   static input_t input;
   static output_t output;
+  unsigned long startTime_pre = micros(); // Début du chrono preprocessing
 
   // 1. Preprocessing
   gaussianBlur3x3(grid, blurred);
@@ -108,6 +109,10 @@ void runCNN() {
   }
   // ----------------------------------------------------
 
+  unsigned long endTime_pre = micros();   // Fin du chrono preprocessing
+  unsigned long inferenceTime_pre = endTime_pre - startTime_pre; // Temps en microsecondes
+  Serial.printf("temps de preprocessing : %lu ms\n", inferenceTime_pre / 1000);
+
   // 2. Préparation Input
   for(int y = 0; y < 28; y++) {
     for(int x = 0; x < 28; x++) {
@@ -122,6 +127,7 @@ void runCNN() {
   
   unsigned long endTime = micros();   // Fin du chrono
   unsigned long inferenceTime = endTime - startTime; // Temps en microsecondes
+  Serial.printf("temps d'inference' : %lu ms\n", inferenceTime / 1000);
   // ------------------------------------
 
   // 3. Softmax & Résultat

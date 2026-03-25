@@ -18,7 +18,7 @@
 #include "riscv_nnfunctions.h"
 #endif
 
-#define INPUT_SAMPLES 100
+#define INPUT_SAMPLES 128
 #define FC_UNITS 10
 #define ACTIVATION_LINEAR
 

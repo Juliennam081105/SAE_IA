@@ -19,12 +19,12 @@ extern "C" {
 #include "number.h"
 
  // InputLayer is excluded
-#include "conv2d_7.h" // InputLayer is excluded
-#include "conv2d_8.h" // InputLayer is excluded
-#include "conv2d_9.h" // InputLayer is excluded
-#include "flatten_3.h" // InputLayer is excluded
-#include "dense_6.h" // InputLayer is excluded
-#include "dense_7.h"
+#include "conv2d.h" // InputLayer is excluded
+#include "conv2d_1.h" // InputLayer is excluded
+#include "conv2d_2.h" // InputLayer is excluded
+#include "flatten.h" // InputLayer is excluded
+#include "dense.h" // InputLayer is excluded
+#include "dense_1.h"
 #endif
 
 
@@ -48,7 +48,7 @@ extern "C" {
 // node 0 is InputLayer so use its output shape as input shape of the model
 // typedef  input_t[28][28][1];
 typedef float input_t[28][28][1];
-typedef dense_7_output_type output_t;
+typedef dense_1_output_type output_t;
 
 
 void cnn(

@@ -14,13 +14,13 @@
 #include "number.h"
 #endif
 
-#define OUTPUT_DIM 576
+#define OUTPUT_DIM 256
 
 typedef float flatten_output_type[OUTPUT_DIM];
 
 #if 0
 void flatten(
-  const number_t input[6][6][16], 			      // IN
+  const number_t input[2][2][64], 			      // IN
 	number_t output[OUTPUT_DIM]); 			                // OUT
 #endif
 

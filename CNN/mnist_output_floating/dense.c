@@ -18,8 +18,8 @@
 #include "riscv_nnfunctions.h"
 #endif
 
-#define INPUT_SAMPLES 576
-#define FC_UNITS 100
+#define INPUT_SAMPLES 256
+#define FC_UNITS 128
 #define ACTIVATION_RELU
 
 // For fixed point quantization
