@@ -1,8 +1,6 @@
-#include <M5GFX.h>
+#include <M5Unified.h>
 #include <mnist_fixed_int16.h>
 #include <math.h>
-
-M5GFX display;
 
 #define GRID_SIZE 28
 
@@ -11,16 +9,7 @@ int16_t grid[GRID_SIZE][GRID_SIZE];
 unsigned long lastPredictionTime = 0;
 bool showResult = false;
 
-/*
-// Prototypes float32
-void runCNN();
-void softmax(float *input, float *output, int size);
-void gaussianBlur3x3(float src[GRID_SIZE][GRID_SIZE], float dst[GRID_SIZE][GRID_SIZE]);
-void centerAndScale(float src[GRID_SIZE][GRID_SIZE], float dst[GRID_SIZE][GRID_SIZE]);
-bool getBoundingBox(float src[GRID_SIZE][GRID_SIZE], int &xmin, int &ymin, int &xmax, int &ymax);
-*/
-
-// Prototypes modifiés pour int16_t
+// Prototypes
 void runCNN();
 void softmax(int16_t *input, float *output, int size);
 void gaussianBlur3x3(int16_t src[GRID_SIZE][GRID_SIZE], int16_t dst[GRID_SIZE][GRID_SIZE]);
@@ -31,48 +20,52 @@ bool getBoundingBox(int16_t src[GRID_SIZE][GRID_SIZE], int &xmin, int &ymin, int
 // SETUP
 // =====================================================
 void setup() {
-  Serial.begin(115200);
-  display.init();
-  display.startWrite();
-  display.fillScreen(TFT_BLACK);
+  auto cfg = M5.config();
+  M5.begin(cfg); // Initialise Display, Touch, et Power (AXP2101)
 
+  Serial.begin(115200);
+  
+  M5.Display.fillScreen(TFT_BLACK);
   memset(grid, 0, sizeof(grid));
-  Serial.println("Système prêt - Contraste élevé");
+  
+  Serial.println("Système prêt - M5Unified");
 }
 
 // =====================================================
 // LOOP : Dessin tactile
 // =====================================================
 void loop() {
-  lgfx::touch_point_t tp[1];
-  int nums = display.getTouchRaw(tp, 1);
+  M5.update(); // Crucial pour rafraîchir les données tactile et batterie
+  
+  auto count = M5.Touch.getCount();
   static bool drawing = false;
 
-  if (nums) {
+  if (count > 0) {
+    auto t = M5.Touch.getDetail(0); // Récupère les infos du premier point touché
+
     if (showResult) {
-      display.fillScreen(TFT_BLACK);
+      M5.Display.fillScreen(TFT_BLACK);
       memset(grid, 0, sizeof(grid));
       showResult = false;
     }
 
     drawing = true;
-    int x = tp[0].x;
-    int y = tp[0].y;
+    
+    // On dessine directement via M5.Display
+    M5.Display.fillCircle(t.x, t.y, 5, TFT_WHITE);
 
-    display.fillCircle(x, y, 5, TFT_WHITE);
-
-    int gx = map(x, 0, 320, 0, 27);
-    int gy = map(y, 0, 240, 0, 27);
+    // Map les coordonnées vers la grille 28x28
+    int gx = map(t.x, 0, M5.Display.width(), 0, 27);
+    int gy = map(t.y, 0, M5.Display.height(), 0, 27);
 
     if (gx >= 0 && gx < GRID_SIZE && gy >= 0 && gy < GRID_SIZE) {
-      // Utilisation du format Q9 (1.0 = 512)
       grid[gy][gx] = 512; 
       
-      // Épaississement du trait avec des valeurs entières (0.6f -> 307)
-      if (gx + 1 < 28) if (grid[gy][gx + 1] < 307) grid[gy][gx + 1] = 307;
-      if (gx - 1 >= 0) if (grid[gy][gx - 1] < 307) grid[gy][gx - 1] = 307;
-      if (gy + 1 < 28) if (grid[gy + 1][gx] < 307) grid[gy + 1][gx] = 307;
-      if (gy - 1 >= 0) if (grid[gy - 1][gx] < 307) grid[gy - 1][gx] = 307;
+      // Épaississement (Q9 format)
+      if (gx + 1 < 28) grid[gy][gx + 1] = max((int)grid[gy][gx+1], 307);
+      if (gx - 1 >= 0) grid[gy][gx - 1] = max((int)grid[gy][gx-1], 307);
+      if (gy + 1 < 28) grid[gy + 1][gx] = max((int)grid[gy+1][gx], 307);
+      if (gy - 1 >= 0) grid[gy - 1][gx] = max((int)grid[gy-1][gx], 307);
     }
   } 
   else if (drawing) {
@@ -82,13 +75,13 @@ void loop() {
     lastPredictionTime = millis();
   }
 
+  // Auto-clear après 2.5 secondes
   if (showResult && (millis() - lastPredictionTime > 2500)) {
-    display.fillScreen(TFT_BLACK);
+    M5.Display.fillScreen(TFT_BLACK);
     memset(grid, 0, sizeof(grid));
     showResult = false;
   }
 }
-
 
 // =====================================================
 // EXECUTION CNN + TRAITEMENT IMAGE
@@ -97,67 +90,42 @@ void runCNN() {
   static int16_t blurred[GRID_SIZE][GRID_SIZE];
   static int16_t preprocessed[GRID_SIZE][GRID_SIZE];
   static input_t input;
-  static dense_1_output_type output; // Utilise le type exact du .h
+  static dense_1_output_type output; 
   
-  unsigned long startTime_pre = micros();
-
-  // 1. Preprocessing (Flou et Redimensionnement)
+  // 1. Preprocessing
   gaussianBlur3x3(grid, blurred);
   centerAndScale(blurred, preprocessed);
 
-  // --- RENFORCEMENT DU CONTRASTE EN ENTIER (Q9) ---
-  // 0.35f en Q9 => 0.35 * 512 = 179
-  // 1.0f  en Q9 => 512
+  // Renforcement contraste
   for (int y = 0; y < 28; y++) {
     for (int x = 0; x < 28; x++) {
       int16_t v = preprocessed[y][x];
-      
-      if (v > 179) { // Seuil de 0.35
-        // Approximation de la courbe v^0.7 * 1.1 sans powf
-        // On booste simplement les valeurs hautes pour saturer vers le noir (512)
-        int32_t boosted = (int32_t)v * 580 / 512; // x 1.13
+      if (v > 179) {
+        int32_t boosted = (int32_t)v * 580 / 512;
         preprocessed[y][x] = (boosted > 512) ? 512 : (int16_t)boosted;
       } else {
-        // Nettoyage des gris clairs
         preprocessed[y][x] = 0; 
       }
-    }
-  }
-
-  unsigned long endTime_pre = micros();
-  unsigned long inferenceTime_pre = endTime_pre - startTime_pre;
-  Serial.printf("temps de preprocessing : %lu ms\n", inferenceTime_pre / 1000);
-
-  // 2. Préparation Input (Copie vers le tenseur d'entrée)
-  for(int y = 0; y < 28; y++) {
-    for(int x = 0; x < 28; x++) {
       input[y][x][0] = preprocessed[y][x];
     }
   }
 
-  // 3. Mesure du temps d'inférence
+  // 2. Inférence
   unsigned long startTime = micros();
-  
-  cnn(input, output); // Appel du modèle IA (Fichier .h)
-  
-  unsigned long endTime = micros();
-  unsigned long inferenceTime = endTime - startTime;
-  Serial.printf("temps d'inference' : %lu ms\n", inferenceTime / 1000);
+  cnn(input, output);
+  unsigned long inferenceTime = micros() - startTime;
 
-  // 4. Softmax & Résultat (On repasse en float pour l'affichage des probas)
+  // 3. Softmax
   float probs[10];
   softmax(output, probs, 10);
 
   int predicted = 0;
   float maxVal = probs[0];
   for(int i = 1; i < 10; i++){
-    if(probs[i] > maxVal) { 
-        maxVal = probs[i]; 
-        predicted = i; 
-    }
+    if(probs[i] > maxVal) { maxVal = probs[i]; predicted = i; }
   }
 
-  // 5. Envoi vers Python (On divise par 512.0 pour que Python reçoive du 0.0-1.0)
+  // 4. Envoi Serial (pour Python)
   Serial.print("MAT:");
   for(int y=0; y<28; y++) {
     for(int x=0; x<28; x++) {
@@ -166,20 +134,36 @@ void runCNN() {
     }
   }
   Serial.println();
-
   Serial.printf("RES:%d,%.2f,%.3f\n", predicted, maxVal * 100, (float)inferenceTime / 1000.0f);
 
-  // 6. Affichage M5
-  display.fillScreen(TFT_BLACK);
-  display.setTextColor(TFT_GREEN, TFT_BLACK); 
-  display.setTextSize(2);
-  display.setCursor(10, 10);
-  display.printf("ID: %d (%.1f%%)", predicted, maxVal * 100);
+  // 5. Affichage M5Unified
+  M5.Display.fillScreen(TFT_BLACK);
+  M5.Display.setTextColor(TFT_GREEN, TFT_BLACK); 
+  M5.Display.setTextSize(2);
+  M5.Display.setCursor(10, 10);
+  M5.Display.printf("ID: %d (%.1f%%)", predicted, maxVal * 100);
   
-  display.setCursor(10, 40);
-  display.setTextColor(TFT_WHITE, TFT_BLACK);
-  display.printf("IA: %.2f ms", (float)inferenceTime / 1000.0f);
+  M5.Display.setCursor(10, 50);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.printf("IA: %.2f ms", (float)inferenceTime / 1000.0f);
+
+  // Gestion Batterie Corrigée
+  int batPct = M5.Power.getBatteryLevel();
+  bool isCharging = M5.Power.isCharging();
+
+  M5.Display.setCursor(10, 100);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
+
+  if (isCharging) {
+    M5.Display.printf("Batterie : %d%% (En charge)", batPct);
+  } else {
+    M5.Display.printf("Batterie : %d%% (Sur batterie)", batPct);
+  }
 }
+
+// --- Garde tes fonctions techniques (gaussianBlur3x3, centerAndScale, etc.) identiques ---
+
 
 // =====================================================
 // FONCTIONS TECHNIQUES
